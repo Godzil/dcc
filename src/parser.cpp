@@ -135,7 +135,7 @@ void Function::FollowCtrl(CALL_GRAPH * pcallGraph, STATE *pstate)
     }
     if (option.VeryVerbose)
     {
-        qDebug() << "Parsing proc" << name << "at"<< QString::number(pstate->IP,16).toUpper();
+        qDebug() << "Parsing proc" << name << "at" << QString::number(pstate->IP,16).toUpper();
     }
 
     while (not done )
@@ -145,6 +145,7 @@ void Function::FollowCtrl(CALL_GRAPH * pcallGraph, STATE *pstate)
             break;
         LLInst *ll = _Icode.ll();
         pstate->IP += (uint32_t)ll->numBytes;
+
         setBits(BM_CODE, ll->label, (uint32_t)ll->numBytes);
 
         process_operands(_Icode,pstate);
@@ -180,6 +181,7 @@ void Function::FollowCtrl(CALL_GRAPH * pcallGraph, STATE *pstate)
             case iJCXZ:
             {
                 STATE   StCopy;
+                uint32_t  lastIp = pstate->IP - 2;
                 int     ip      = Icode.size()-1;	/* Index of this jump */
                 ICODE  &prev(*(++Icode.rbegin())); /* Previous icode */
                 bool   fBranch = false;
@@ -199,6 +201,13 @@ void Function::FollowCtrl(CALL_GRAPH * pcallGraph, STATE *pstate)
                     fBranch = (bool) (ll->getOpcode() == iJB or ll->getOpcode() == iJBE);
                 }
                 StCopy = *pstate;
+
+                if (pstate->IP > 0x100000)
+                {
+                    printf("Something wrong with IP...\n");
+                }
+
+                printf("From %X condJump to %X\n", lastIp, pstate->IP);
 
                 /* Straight line code */
                 this->FollowCtrl (pcallGraph, &StCopy); // recurrent ?
@@ -546,6 +555,7 @@ bool Function::process_JMP (ICODE & pIcode, STATE *pstate, CALL_GRAPH * pcallGra
     PROG &prog(Project::get()->prog);
     static uint8_t i2r[4] = {rSI, rDI, rBP, rBX};
     ICODE       _Icode;
+    uint32_t     lastIp = pstate->IP - 1;
     uint32_t       cs, offTable, endTable;
     uint32_t       i, k, seg, target;
 
@@ -553,7 +563,33 @@ bool Function::process_JMP (ICODE & pIcode, STATE *pstate, CALL_GRAPH * pcallGra
     {
         if (pIcode.ll()->getOpcode() == iJMPF)
             pstate->setState( rCS, LH(prog.image() + pIcode.ll()->label + 3));
-        pstate->IP = pIcode.ll()->src().getImm2();
+
+        pstate->IP =  pIcode.ll()->src().getImm2();
+
+        if (pstate->IP == 0)
+        {
+            printf("debug...\n");
+        }
+
+        /* Need to use CS! */
+        if ((pIcode.ll()->getOpcode() != iJMPF) && (pIcode.ll()->getOpcode() != iJMP))
+        {
+            printf("debug\n");
+        }
+        if (pstate->IP > 0x10000)
+        {
+            printf("debug\n");
+        }
+
+        pstate->IP += pstate->r[rCS] << 4;
+
+        if (pstate->IP > 0x100000)
+        {
+            printf("Something wrong with IP (was %x)...\n", lastIp);
+        }
+
+        printf("From %X JMP(F) to %X\n", lastIp, pstate->IP);
+
         int64_t i = pIcode.ll()->src().getImm2();
         if (i < 0)
         {
@@ -677,6 +713,7 @@ bool Function::process_CALL(ICODE & pIcode, CALL_GRAPH * pcallGraph, STATE *psta
     PROG &prog(Project::get()->prog);
     ICODE &last_insn(Icode.back());
     STATE localState;     /* Local copy of the machine state */
+    uint32_t     lastIp = pstate->IP - 2;
     uint32_t off;
     /* For Indirect Calls, find the function address */
     bool indirect = false;
@@ -770,10 +807,21 @@ bool Function::process_CALL(ICODE & pIcode, CALL_GRAPH * pcallGraph, STATE *psta
             pstate->IP = pIcode.ll()->src().getImm2();
             if (pIcode.ll()->getOpcode() == iCALLF)
                 pstate->setState( rCS, LH(prog.image() + pIcode.ll()->label + 3));
+
+            /* Need to use CS! */
+            pstate->IP += pstate->r[rCS] << 4;
+
             x.state = *pstate;
 
             /* Insert new procedure in call graph */
-            pcallGraph->insertCallGraph (this, iter);
+-            pcallGraph->insertCallGraph (this, iter);
+
+            if (pstate->IP > 0x100000)
+            {
+                printf("Something wrong with IP (was %x)...\n", lastIp);
+            }
+
+            printf("From %X CALL to %X\n", lastIp, pstate->IP);
 
             /* Process new procedure */
             x.FollowCtrl (pcallGraph, pstate);

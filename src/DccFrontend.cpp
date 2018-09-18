@@ -228,14 +228,77 @@ struct ComLoader : public DosLoader {
         prog.initSP = 0xFFFE;
         prog.cReloc = 0;
 
-        prepareImage(prog,cb,fp);
-
+        prepareImage(prog, cb, fp);
 
         /* Set up memory map */
         cb = (prog.cbImage + 3) / 4;
         prog.map = (uint8_t *)malloc(cb);
         memset(prog.map, BM_UNKNOWN, (size_t)cb);
         return true;
+    }
+};
+struct RomLoader {
+    bool canLoad(QFile &fp) {
+        fp.seek(0xFFF0);
+        uint8_t sig[1];
+        if(fp.read((char *)sig,1) == 1)
+        {
+            return (sig[0] == 0xEA);
+        }
+        return false;
+    }
+    bool load(PROG &prog,QFile &fp) {
+        printf("Loading ROM...\n");
+        fp.seek(0);
+        /* ROM file
+         * In this case the load module size is just the file length
+         */
+        auto cb = fp.size();
+
+        fp.seek(cb - 0x10);
+        uint8_t buf[5];
+        printf("Going to get CS/IP...\n");
+        if(fp.read((char *)buf, 5) != 5)
+        {
+            return false;
+        }
+
+        fp.seek(0);
+
+        /* ROM File, Hard to say where it is suppose to start, so try to trust the
+         */
+        prog.initIP = (buf[2] << 8) | buf[1];
+        //prog.initCS = 0;
+        prog.initCS = (buf[4] << 8) | buf[3];
+
+        prog.initSS = 0;
+        prog.initSP = 0xFFFE;
+
+        prog.cReloc = 0;
+
+        prepareImage(prog, cb, fp);
+
+        /* Set up memory map */
+        cb = (prog.cbImage + 3) / 4;
+        prog.map = (uint8_t *)malloc(cb);
+        memset(prog.map, BM_UNKNOWN, (size_t)cb);
+        return true;
+    }
+
+protected:
+    void prepareImage(PROG &prog, size_t sz, QFile &fp)
+    {
+        int32_t start = 0x100000 - sz;
+        /* Allocate a block of memory for the program. */
+        prog.cbImage  = 1 * 1024 * 1024; /* Allocate the whole 1MB memory */
+        //prog.cbImage  = 64 * 1024; /* Allocate the whole 1MB memory */
+        prog.Imagez    = new uint8_t [prog.cbImage];
+
+        if (fp.read((char *)prog.Imagez + start, sz) != sz)
+        //if (fp.read((char *)prog.Imagez, sz) != sz)
+        {
+            fatalError(CANNOT_READ, fp.fileName().toLocal8Bit().data());
+        }
     }
 };
 struct ExeLoader : public DosLoader {
@@ -340,8 +403,16 @@ bool Project::load()
     {
         fatalError(CANNOT_READ, fname);
     }
+    RomLoader rom_loader;
     ComLoader com_loader;
     ExeLoader exe_loader;
+    if(rom_loader.canLoad(finfo)) {
+        /* We have no relacation and code should be on 64K only,
+         * So let's consider it as a COM file
+         */
+        prog.fCOM = true;
+        return rom_loader.load(prog,finfo);
+    }
     if(exe_loader.canLoad(finfo)) {
         prog.fCOM = false;
         return exe_loader.load(prog,finfo);

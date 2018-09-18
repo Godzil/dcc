@@ -11,7 +11,7 @@
 struct STATE
 {
     uint32_t      IP;             /* Offset into Image                    */
-    int16_t       r[INDEX_BX_SI];   /* Value of segs and AX                 */
+    uint16_t      r[INDEX_BX_SI];   /* Value of segs and AX                 */
     bool          f[INDEX_BX_SI];   /* True if r[.] has a value             */
     struct
     {                           /* For case stmt indexed reg            */
