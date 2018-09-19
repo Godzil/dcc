@@ -237,6 +237,7 @@ struct ComLoader : public DosLoader {
         return true;
     }
 };
+#if 0
 struct RomLoader {
     bool canLoad(QFile &fp) {
         fp.seek(0xFFF0);
@@ -301,6 +302,55 @@ protected:
         }
     }
 };
+#else
+struct RomLoader {
+    bool canLoad(QFile &fp) {
+        fp.seek(0xFFF0);
+        uint8_t sig[1];
+        if(fp.read((char *)sig,1) == 1)
+        {
+            return (sig[0] == 0xEA);
+        }
+        return false;
+    }
+    bool load(PROG &prog,QFile &fp) {
+        fp.seek(0);
+        /* COM file
+         * In this case the load module size is just the file length
+         */
+        auto cb = fp.size();
+
+        /* COM programs start off with an ORG 100H (to leave room for a PSP)
+         * This is also the implied start address so if we load the image
+         * at offset 100H addresses should all line up properly again.
+         */
+        prog.initCS = 0;
+        prog.initIP = 0x000;
+        prog.initSS = 0;
+        prog.initSP = 0xFFFE;
+        prog.cReloc = 0;
+
+        prepareImage(prog, cb, fp);
+
+        /* Set up memory map */
+        cb = (prog.cbImage + 3) / 4;
+        prog.map = (uint8_t *)malloc(cb);
+        memset(prog.map, BM_UNKNOWN, (size_t)cb);
+        return true;
+    }
+
+protected:
+    void prepareImage(PROG &prog, size_t sz, QFile &fp)
+    {
+        /* Allocate a block of memory for the program. */
+        prog.cbImage = sz;
+        prog.Imagez = new uint8_t[prog.cbImage];
+
+        if (sz != fp.read((char *)prog.Imagez, sz))
+            fatalError(CANNOT_READ, fp.fileName().toLocal8Bit().data());
+    }
+};
+#endif
 struct ExeLoader : public DosLoader {
     bool canLoad(QFile &fp) {
         if(fp.size()<sizeof(header))

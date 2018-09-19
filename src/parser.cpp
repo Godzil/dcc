@@ -202,12 +202,7 @@ void Function::FollowCtrl(CALL_GRAPH * pcallGraph, STATE *pstate)
                 }
                 StCopy = *pstate;
 
-                if (pstate->IP > 0x100000)
-                {
-                    printf("Something wrong with IP...\n");
-                }
-
-                printf("From %X condJump to %X\n", lastIp, pstate->IP);
+                //printf("From %X condJump to %X\n", lastIp, pstate->IP);
 
                 /* Straight line code */
                 this->FollowCtrl (pcallGraph, &StCopy); // recurrent ?
@@ -566,29 +561,15 @@ bool Function::process_JMP (ICODE & pIcode, STATE *pstate, CALL_GRAPH * pcallGra
 
         pstate->IP =  pIcode.ll()->src().getImm2();
 
-        if (pstate->IP == 0)
-        {
-            printf("debug...\n");
-        }
+        //printf("From seg:%04X JMP(F) to %X\n", lastIp, pstate->IP);
 
-        /* Need to use CS! */
-        if ((pIcode.ll()->getOpcode() != iJMPF) && (pIcode.ll()->getOpcode() != iJMP))
+        if (pstate->IP == 0xFFFF0)
         {
-            printf("debug\n");
+            /* Nasty (wrong) trick use to reset, consider it as terminating */
+            pIcode.ll()->setFlags(TERMINATES);
+            pstate->setState( rCS, 0);
+            pstate->IP = 0;
         }
-        if (pstate->IP > 0x10000)
-        {
-            printf("debug\n");
-        }
-
-        pstate->IP += pstate->r[rCS] << 4;
-
-        if (pstate->IP > 0x100000)
-        {
-            printf("Something wrong with IP (was %x)...\n", lastIp);
-        }
-
-        printf("From %X JMP(F) to %X\n", lastIp, pstate->IP);
 
         int64_t i = pIcode.ll()->src().getImm2();
         if (i < 0)
@@ -808,20 +789,12 @@ bool Function::process_CALL(ICODE & pIcode, CALL_GRAPH * pcallGraph, STATE *psta
             if (pIcode.ll()->getOpcode() == iCALLF)
                 pstate->setState( rCS, LH(prog.image() + pIcode.ll()->label + 3));
 
-            /* Need to use CS! */
-            pstate->IP += pstate->r[rCS] << 4;
-
             x.state = *pstate;
 
             /* Insert new procedure in call graph */
 -            pcallGraph->insertCallGraph (this, iter);
 
-            if (pstate->IP > 0x100000)
-            {
-                printf("Something wrong with IP (was %x)...\n", lastIp);
-            }
-
-            printf("From %X CALL to %X\n", lastIp, pstate->IP);
+            //printf("From %X CALL to %X\n", lastIp, pstate->IP);
 
             /* Process new procedure */
             x.FollowCtrl (pcallGraph, pstate);
